@@ -1,4 +1,4 @@
-# main.py — 8m-global-mapper (estable y coherente)
+# main.py — 8m-global-mapper
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ MAX_SEEDS            = int(os.environ.get("MAX_SEEDS",            "220"))
 MAX_PRIORITY         = int(os.environ.get("MAX_PRIORITY",         "750"))
 MAX_TOTAL_CANDIDATES = int(os.environ.get("MAX_TOTAL_CANDIDATES", "3000"))
 
-CRAWL_DEPTH       = int(os.environ.get("CRAWL_DEPTH",       "2"))
+CRAWL_DEPTH        = int(os.environ.get("CRAWL_DEPTH",       "2"))
 MAX_PAGES_PER_SEED = int(os.environ.get("MAX_PAGES_PER_SEED", "30" if FAST_MODE else "60"))
 
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "20"))
@@ -59,6 +59,65 @@ THRESHOLD_EXTRACT     = int(os.environ.get("THRESHOLD_EXTRACT",     "6"))
 THRESHOLD_EXPORT_UMAP = int(os.environ.get("THRESHOLD_EXPORT_UMAP", "10"))
 
 MIN_EVENT_DATE = date.fromisoformat(os.environ.get("MIN_EVENT_DATE", "2025-01-01"))
+
+
+# =========================
+# Mapeo región → país por defecto
+# Cuando la seed no tiene país explícito, usamos la región para inferirlo.
+# Se usa solo como fallback para geocodificación — no se muestra al usuario.
+# =========================
+_REGION_DEFAULT_COUNTRY = {
+    "Europa":          "España",
+    "America Sur":     "",
+    "America Centro":  "",
+    "America Norte":   "",
+    "Africa":          "",
+    "Asia":            "",
+    "Oceania":         "",
+}
+
+# Mapeo dominio TLD → país ISO2 para inferir país desde la URL
+_TLD_TO_COUNTRY = {
+    ".ar": "Argentina",  ".bo": "Bolivia",   ".br": "Brasil",
+    ".cl": "Chile",      ".co": "Colombia",  ".cr": "Costa Rica",
+    ".cu": "Cuba",       ".do": "República Dominicana",
+    ".ec": "Ecuador",    ".sv": "El Salvador", ".gt": "Guatemala",
+    ".hn": "Honduras",   ".mx": "México",    ".ni": "Nicaragua",
+    ".pa": "Panamá",     ".py": "Paraguay",  ".pe": "Perú",
+    ".uy": "Uruguay",    ".ve": "Venezuela",
+    ".es": "España",     ".fr": "Francia",   ".de": "Alemania",
+    ".it": "Italia",     ".pt": "Portugal",  ".be": "Bélgica",
+    ".nl": "Países Bajos", ".ch": "Suiza",   ".at": "Austria",
+    ".uk": "Reino Unido", ".gb": "Reino Unido",
+    ".se": "Suecia",     ".no": "Noruega",   ".dk": "Dinamarca",
+    ".fi": "Finlandia",  ".pl": "Polonia",   ".cz": "República Checa",
+    ".hu": "Hungría",    ".ro": "Rumania",   ".bg": "Bulgaria",
+    ".hr": "Croacia",    ".gr": "Grecia",    ".tr": "Turquía",
+    ".us": "Estados Unidos", ".ca": "Canadá",
+    ".ke": "Kenya",      ".ng": "Nigeria",   ".za": "Sudáfrica",
+    ".et": "Etiopía",    ".gh": "Ghana",     ".sn": "Senegal",
+    ".ma": "Marruecos",  ".eg": "Egipto",    ".tz": "Tanzania",
+    ".ug": "Uganda",
+    ".in": "India",      ".pk": "Pakistán",  ".bd": "Bangladesh",
+    ".ph": "Filipinas",  ".vn": "Vietnam",   ".th": "Tailandia",
+    ".au": "Australia",  ".nz": "Nueva Zelanda",
+}
+
+
+def _infer_country_from_url(url: str) -> str:
+    """
+    Intenta inferir el país desde el TLD de la URL.
+    .es → España, .ar → Argentina, etc.
+    Devuelve "" si no puede inferir.
+    """
+    try:
+        host = urlparse(url).netloc.lower()
+        for tld, country in _TLD_TO_COUNTRY.items():
+            if host.endswith(tld) or ("." + host).endswith(tld):
+                return country
+    except Exception:
+        pass
+    return ""
 
 
 # =========================
@@ -74,7 +133,7 @@ def strip_fragment(u: str) -> str:
     return (u or "").split("#")[0].strip()
 
 
-def dedupe(items: list[str]) -> list[str]:
+def dedupe(items: list) -> list:
     seen = set()
     out  = []
     for x in items:
@@ -94,9 +153,9 @@ def normalize(s: str) -> str:
 
 
 # =========================
-# Cities (para detect_city)
+# Cities
 # =========================
-def load_cities(path: str) -> list[str]:
+def load_cities(path: str) -> list:
     if not os.path.exists(path):
         return []
     cities = []
@@ -105,17 +164,10 @@ def load_cities(path: str) -> list[str]:
             line = line.strip()
             if line and not line.startswith("#"):
                 cities.append(line)
-    # Ordenar por longitud descendente para evitar matches parciales
-    # (ej: "Buenos Aires" antes que "Aires")
     return sorted(cities, key=lambda x: -len(x))
 
 
-def detect_city(text: str, cities: list[str]) -> str:
-    """
-    Busca la primera ciudad de la lista en el texto (case-insensitive).
-    Las ciudades están ordenadas por longitud descendente para que
-    "Buenos Aires" matchee antes que "Aires".
-    """
+def detect_city(text: str, cities: list) -> str:
     if not text or not cities:
         return ""
     t = text.lower()
@@ -142,22 +194,21 @@ def url_allowed_by_rules(rules: dict, url: str) -> bool:
 
     u = (url or "").lower()
 
-    # ── Reglas globales ──────────────────────────────────────────────────────
+    # Reglas globales
     global_rules = rules.get("global") or {}
     if isinstance(global_rules, dict):
         for pat in (global_rules.get("deny_url_contains") or []):
             if isinstance(pat, str) and pat.lower() in u:
                 return False
 
-    # ── Reglas por dominio ───────────────────────────────────────────────────
+    # Reglas por dominio
     parsed = urlparse(url)
     host   = (parsed.netloc or "").lower().lstrip("www.")
 
-    domain_rules = (rules.get("domains") or {})
+    domain_rules = rules.get("domains") or {}
     if not isinstance(domain_rules, dict):
         return True
 
-    # Buscar el dominio más específico que matchee
     matched = None
     for d in domain_rules:
         d_clean = d.lower().lstrip("www.")
@@ -172,11 +223,9 @@ def url_allowed_by_rules(rules: dict, url: str) -> bool:
     if not isinstance(drules, dict):
         return True
 
-    # hard_deny: bloquear el dominio completo
     if drules.get("hard_deny"):
         return False
 
-    # allow_url_contains: whitelist — si existe, solo pasan URLs que matcheen
     allow = drules.get("allow_url_contains") or []
     if allow:
         for pat in allow:
@@ -184,7 +233,6 @@ def url_allowed_by_rules(rules: dict, url: str) -> bool:
                 return True
         return False
 
-    # deny_url_contains: blacklist adicional por dominio
     for pat in (drules.get("deny_url_contains") or []):
         if isinstance(pat, str) and pat.lower() in u:
             return False
@@ -299,6 +347,28 @@ def build_umap_popup(ev: dict) -> str:
 
 
 # =========================
+# Inferir a qué seed pertenece una URL candidata
+# =========================
+def _find_seed_for_url(url: str, seed_meta: dict) -> str:
+    """
+    Devuelve la seed URL que corresponde al mismo dominio que url.
+    Se usa para heredar región y país de la seed.
+    """
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return ""
+    for seed_url in seed_meta:
+        try:
+            seed_host = urlparse(seed_url).netloc.lower()
+            if host == seed_host or host.endswith("." + seed_host) or seed_host.endswith("." + host):
+                return seed_url
+        except Exception:
+            continue
+    return ""
+
+
+# =========================
 # MAIN
 # =========================
 def main():
@@ -317,12 +387,14 @@ def main():
     candidates = []
     seen       = set()
 
+    # Priority URLs primero
     for u in priority[:MAX_PRIORITY]:
         u = strip_fragment(u)
         if u and u not in seen and url_allowed_by_rules(rules, u):
             seen.add(u)
             candidates.append(u)
 
+    # Crawl BFS por seed
     for seed in seeds[:MAX_SEEDS]:
         if len(candidates) >= MAX_TOTAL_CANDIDATES:
             break
@@ -371,9 +443,29 @@ def main():
             except Exception:
                 pass
 
-        # ciudad fallback — buscar SOLO en título + descripción corta (máx 300 chars)
-        # NO buscar en el texto completo: evita que nombres de personas
-        # (ej: "Verónica Sanz, moderadora") se conviertan en la ciudad del evento
+        # ── Enriquecer con metadata de la seed ──────────────────────────────
+        seed_url = _find_seed_for_url(url, seed_meta)
+        meta     = seed_meta.get(seed_url, {})
+
+        # Región
+        if not ev.get("region") and meta.get("region"):
+            ev["region"] = meta["region"]
+
+        # Temas
+        if not ev.get("temas") and meta.get("temas"):
+            ev["temas"] = ", ".join(meta["temas"])
+
+        # País — cascada: extractor → TLD de URL → región default
+        if not ev.get("pais"):
+            pais_tld = _infer_country_from_url(url)
+            if pais_tld:
+                ev["pais"] = pais_tld
+            elif meta.get("region"):
+                ev["pais"] = _REGION_DEFAULT_COUNTRY.get(meta["region"], "")
+
+        # ── Ciudad fallback — SOLO en título + 300 chars de descripción ─────
+        # NO buscar en texto completo: evita que "Verónica Sanz (moderadora)"
+        # se convierta en ciudad del evento
         if not ev.get("ciudad"):
             short_blob = normalize(
                 str(ev.get("convocatoria") or "") + " " +
@@ -383,20 +475,25 @@ def main():
             if found:
                 ev["ciudad"] = found
 
-        # geocode
+        # ── Geocode ──────────────────────────────────────────────────────────
         geo = geocode_event(ev, geocode_cache=geocode_cache)
         if geo and geo.get("lat") and geo.get("lon"):
             ev["lat"] = geo["lat"]
             ev["lon"] = geo["lon"]
             n_geocoded += 1
 
-        # imagen fallback desde og:image en el HTML crudo
+        # ── Imagen fallback desde og:image en HTML crudo ─────────────────────
         img_url = (ev.get("imagen") or "").strip()
         if not img_url:
             m = re.search(
                 r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
                 html, re.I
             )
+            if not m:
+                m = re.search(
+                    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+                    html, re.I
+                )
             if m:
                 img_url = m.group(1).strip()
 
@@ -422,11 +519,11 @@ def main():
     export_sin_coord_csv(EXPORT_SIN_COORD, records, min_score=THRESHOLD_EXPORT_UMAP)
 
     print("")
-    print(f"🧾 Eventos master:      {len(records)}")
-    print(f"🧠 Skipped low score:   {n_low_score}")
-    print(f"🗑️  Filtrados por fecha: {n_old_skip}")
-    print(f"📍 Geocoded:            {n_geocoded}")
-    print(f"🖼️  Imágenes descargadas: {n_imgs}")
+    print(f"🧾 Eventos master:       {len(records)}")
+    print(f"🧠 Skipped low score:    {n_low_score}")
+    print(f"🗑️  Filtrados por fecha:  {n_old_skip}")
+    print(f"📍 Geocoded:             {n_geocoded}")
+    print(f"🖼️  Imagenes descargadas: {n_imgs}")
 
 
 if __name__ == "__main__":
