@@ -1,25 +1,65 @@
+# config/domain_rules.yml
+# Reglas de filtrado de URLs por dominio o patrones globales.
+#
+# Estructura:
+#   global.deny_url_contains     → bloquea cualquier URL que contenga estos strings
+#   domains.<domain>.hard_deny   → bloquea el dominio completo
+#   domains.<domain>.allow_url_contains → WHITELIST: solo pasan URLs que matcheen alguno
+#   domains.<domain>.deny_url_contains  → blacklist adicional para ese dominio
+#
+# Nota: si un dominio tiene 'allow_url_contains', actúa como whitelist estricta.
+# Solo pasan las URLs que matcheen al menos uno de esos patrones.
+
 global:
   deny_url_contains:
+    # Enciclopedias
     - "wikipedia.org"
     - "/w/index.php"
     - "mobileaction=toggle_view_mobile"
 
+    # Páginas institucionales genéricas (no son eventos)
     - "/privacy"
+    - "/privacidad"
     - "/terms"
+    - "/terminos"
     - "/cookies"
     - "/cookie"
     - "/legal"
+    - "/aviso-legal"
     - "/about"
+    - "/sobre"
+    - "/nosotras"
+    - "/nosotros"
     - "/contact"
+    - "/contacto"
     - "/sitemap"
+    - "/sitemap.xml"
+
+    # Taxonomías (no son páginas de eventos)
     - "/tag/"
+    - "/tags/"
     - "/category/"
+    - "/categoria/"
+    - "/categorias/"
     - "/author/"
+    - "/autora/"
+    - "/autor/"
     - "/page/"
+
+    # Feeds
     - "/feed"
     - "/rss"
+    - ".rss"
+    - ".atom"
 
-    # WordPress/otros: comentarios, búsquedas, shares
+    # APIs y datos crudos (no HTML para scrapear)
+    - "/wp-json/"
+    - "/wp-admin/"
+    - "/xmlrpc.php"
+    - "?rest_route="
+    - "/api/v"
+
+    # WordPress: interacciones, búsquedas
     - "#respond"
     - "?s="
     - "&s="
@@ -27,6 +67,13 @@ global:
     - "&replytocom="
     - "?share="
     - "&share="
+    - "?preview=true"
+
+    # Recursos estáticos
+    - ".pdf"
+    - ".zip"
+    - ".docx"
+    - ".xlsx"
 
   deny_title_contains:
     - "privacy policy"
@@ -36,10 +83,12 @@ global:
     - "newsletter"
     - "wikipedia"
 
+
 domains:
+
+  # ── Dominios con whitelist (solo ciertas secciones son relevantes) ──────────
+
   amnesty.ca:
-    deny_url_contains:
-      - "/human-rights-news/international-womens-day"
     allow_url_contains:
       - "/event"
       - "/events"
@@ -48,11 +97,92 @@ domains:
       - "/petition"
       - "/news"
 
+  ateneodemadrid.com:
+    # Solo /evento/ contiene convocatorias reales.
+    # /historia/, /presidentes/, /organizacion-interna/ etc. no son eventos.
+    allow_url_contains:
+      - "/evento/"
+      - "/eventos/"
+      - "/actividad/"
+      - "/actividades/"
+
+  unwomen.org:
+    allow_url_contains:
+      - "/news/"
+      - "/events/"
+      - "/event/"
+      - "/stories/"
+      - "/press-releases/"
+
+  awid.org:
+    allow_url_contains:
+      - "/news/"
+      - "/events/"
+      - "/event/"
+      - "/resources/"
+
+  globalfundforwomen.org:
+    allow_url_contains:
+      - "/news/"
+      - "/stories/"
+      - "/blog/"
+
+  womensmarch.com:
+    allow_url_contains:
+      - "/event"
+      - "/events"
+      - "/news"
+      - "/blog"
+      - "/march"
+
+  # ── Dominios con hard_deny ────────────────────────────────────────────────
+
   women-co.com:
+    hard_deny: true
+
+  wikipedia.org:
     hard_deny: true
 
   es.wikipedia.org:
     hard_deny: true
 
-  wikipedia.org:
+  en.wikipedia.org:
+    hard_deny: true
+
+  fr.wikipedia.org:
+    hard_deny: true
+
+  de.wikipedia.org:
+    hard_deny: true
+
+  pt.wikipedia.org:
+    hard_deny: true
+
+  # Redes sociales (no scrapeables sin autenticación)
+  facebook.com:
+    hard_deny: true
+
+  instagram.com:
+    hard_deny: true
+
+  twitter.com:
+    hard_deny: true
+
+  x.com:
+    hard_deny: true
+
+  tiktok.com:
+    hard_deny: true
+
+  linkedin.com:
+    hard_deny: true
+
+  youtube.com:
+    hard_deny: true
+
+  # Plataformas de eventos (requieren login o estructura incompatible)
+  eventbrite.com:
+    hard_deny: true
+
+  meetup.com:
     hard_deny: true

@@ -1,258 +1,309 @@
-A Coruña
-Adelaide
-Alacant
-Almatý
-Almería
-Altıntaş, Urla/Província d'Esmirna, Turquia
-Amiens
-Amterdam
-Araras
-Aregua
-Arras
-Arrecife
-Asunción
-Atlacomulco
-Aveiro
-Avilés
-Badajoz
-Badalona
-Badalona, Barcelona
-Baiona
-Bangkok
-Barakaldo
-Barcelona
-Barcelos
-Belfast
-Bello
-Belém
-Berlin
-Bilbo
-BLANGY-SUR-BRESLE
-Bogotá
-BOLOGNA
-Braga
-Bremen
-Brescia
-Brisbane
-Bruxelles
-Bucharest
-Buenos Aires
-Campinas - SP
-Cancún
-Cartagena
-Cartagena de indias
-Castelló
-Castrillón
-Catania. Sicilia
-Cauca
-CHARLEVILLE-MEZIERES
+# config/cities.txt
+# Lista de ciudades para detección en texto de convocatorias.
+# Ordenadas por longitud DESCENDENTE: así "Buenos Aires" matchea antes que "Aires".
+#
+# REGLAS para mantener esta lista sana:
+# - NO agregar términos genéricos: Remoto, En línea, Virtual, Online
+# - NO agregar nombres propios de personas
+# - NO agregar regiones o estados como ciudades
+# - Usar el nombre más corto sin sufijos (ej: "Campinas", no "Campinas - SP")
+
+Santo Domingo de los Tsachilas
+Las Palmas de Gran Canaria
+San Cristóbal de las Casas
+L'Hospitalet de Llobregat
 Chiclana de la Frontera
-Chiclayo
-Chocó
+Santa Cruz de la Sierra
+Santa Cruz de Tenerife
+CHARLEVILLE-MEZIERES
+Cartagena de indias
+Comodoro Rivadavia
+BLANGY-SUR-BRESLE
+Florencia Caquetá
+Santiago de Chile
+São João da Barra
+Torrejon de Ardoz
 Ciudad de México
 Ciudad de Panamá
-Ciudad Satélite, Naucalpan
-Coimbra
-Colmenarejo (Madrid)
-Comodoro Rivadavia
-Cotia
-Cuenca
-Curitiba
-Cáceres
-Cádiz
-Córdoba
-Dakar
-Donosti
-Donostia
-Dublin
-Durango, País Vasco
+Ho Chi Minh City
+Oaxaca de Juárez
+Tuxtla Gutiérrez
+Vitoria- Gasteiz
+Lomas de Zamora
+San Luis Potosí
+Dar es Salaam
+Florianopolis
+Foz do Iguaçu
+Mar del Plata
+Puerto Madryn
+San Francisco
+Buenos Aires
+Johannesburg
+Kuala Lumpur
+Porto Alegre
+San Fernando
+San Salvador
+Torrelodones
+Valenciennes
+Viña del Mar
+Addis Ababa
+Atlacomulco
+Guadalajara
+La Felguera
+Los Angeles
+Los Ángeles
+Montpellier
+Pirenópolis
+Quezon City
+Tegucigalpa
+Birmingham
+Bratislava
+Casablanca
+Castrillón
+Copenhagen
+Heidelberg
+Le Treport
+Manchester
+Montevideo
+Paramaribo
+Phnom Penh
+Río Cuarto
+Río Grande
+San Felipe
+Strasbourg
+Valladolid
+Valledupar
+Valparaíso
+Washington
+Wellington
+Amsterdam
+Barakaldo
+Barcelona
+Bruxelles
+Bucharest
+Cape Town
+Cartagena
+Edinburgh
 El Bolsón
 El Puerto
-Elx
-En línea
-Ensenada
-Esquel
-Esquel, Chubut
-ESTADO DE MÉXICO
-Estambul
-Faro
-Federal
-Ferrol
-Firenze
-Florencia Caquetá
-Florianopolis
 Fortaleza
-Foz do Iguaçu
-Gasteiz
-Gavà
-Gavà. Catalunya
-Girona
-Granada
-Graz
-Guadalajara
+Frankfurt
 Guayaquil
 Guimarães
-Hamburg
-Heidelberg
-Huelva
-Huesca
-Huánuco
-Ipiales
-Iruñea
-Irún
 Islamabad
-Jakarta
-Jaén
-Jerez
-Johannesburg
 Karlsruhe
+Kathmandu
+La Serena
+Ljubljana
+Marseille
+Melbourne
+Monterrey
+Paranaguá
+Plasencia
+Reykjavik
+Salamanca
+Santander
+Singapore
+Stockholm
+Stuttgart
+São Paulo
+Tarragona
+Vancouver
+A Coruña
+Adelaide
+Arrecife
+Asunción
+Auckland
+Badalona
+Barcelos
+Bordeaux
+Brisbane
+Budapest
+Castelló
+Chiclayo
+Curitiba
+Donostia
+Ensenada
+Estambul
+Florence
+Helsinki
 Kinshasa
 Kostanay
-L'Hospitalet de Llobregat
-La Felguera
-La Felguera - Llangréu
 La Línea
-La Serena
-Laon
-Las Palmas de Gran Canaria
-Le Treport
-Leiria
-Lens
-Lille
-Lima
-Lisboa
-Lleida
-Lomas de Zamora
-London
-Los Angeles
-Los Banos, Laguna
-Los Ángeles
-Lugo
-Lyon
 Machacos
-Madrid
-Manila
-Mar del Plata
-Matera
 Medellín
-Melbourne
 Mexicali
-MIlano
-Mindanao
-Modena
 Monrovia
-Monterrey
-Montevideo
-Montevideos
-Montpellier
 Montreal
 Montréal
+New York
+Ramallah
+Róterdam
+Saltillo
+San José
+Sanlúcar
+Santiago
+Toulouse
+Valencia
+Vallenar
+València
+Zaragoza
+Abidjan
+Alacant
+Almería
+Badajoz
+Baghdad
+Bangkok
+Belfast
+BOLOGNA
+Brescia
+Caracas
+Chennai
+Coimbra
+Cologne
+Colombo
+Cáceres
+Córdoba
+Donosti
+Firenze
+Gasteiz
+Glasgow
+Granada
+Hamburg
+Huánuco
+Ipiales
+Jakarta
+Kampala
+Karachi
+Kolkata
 Morelia
+Nairobi
+Neuquén
+Palermo
+Posadas
+Quesada
+Rosario
+Segovia
+Sevilla
+Seville
+Tallinn
+Tbilisi
+Tijuana
+Toronto
+Trieste
+Ushuaia
+Venezia
+Vilnius
+Vinaròs
+Yerevan
+Zapopán
+Almatý
+Amiens
+Ankara
+Araras
+Aregua
+Aveiro
+Avilés
+Baiona
+Beirut
+Berlin
+Bilbao
+Bogotá
+Bremen
+Cancún
+Cuenca
+Dublin
+Esquel
+Ferrol
+Girona
+Huelva
+Huesca
+Iruñea
+La Paz
+Leiria
+Lisboa
+Lleida
+London
+Madrid
+Manila
+Matera
+Milano
+Modena
+Mumbai
+Munich
 Murcia
 Málaga
 Mérida
 México
-Nairobi
+Nantes
+Naples
 Napoli
-Neuquén
-New York
-Oaxaca de Juárez
+Ottawa
 Oviedo
 Padova
-Palermo
-Palma
-Paranaguá
-Paris
-Perth
-Pirenópolis
-Pisa
-Plasencia
-Porto
-Porto Alegre
-Posadas
+Prague
 Puebla
-Puerto Madryn
-Quesada
-Quezon City
-Quito
-Rabat
-Ramallah
-Remoto
-Reus
-Rio Tercero, Cordoba
-Roma
-Rosario
-Río Cuarto
-Río Grande
-Róterdam
-Saint-Leu, Réunión
-Salamanca
-Saltillo
-San Antonio, TX
-San Cristóbal de las Casas
-San Felipe
-San Fernando
-San Francisco
-San José
-San Luis Potosí
-San Luis Río Colorado, Sonora.
-San Salvador
-Sanlúcar
-Santa Catarina (estado)
-Santa Cruz de la Sierra
-Santa Cruz de Tenerife
-Santander
-Santiago
-Santiago de Chile
-Santo Domingo de los Tsachilas
-Segovia
-Sevilla
-Sidney
-South Africa
-Stockholm
 Sydney
-São João da Barra
-São Paulo
-Tabasco
 Taipei
-Tarragona
-Tegucigalpa
+Tehran
 Teruel
-Tigre
-Tijuana
 Tirana
-Tokio
 Toledo
 Toluca
-Tonedale
 Torino
-Torrejon de Ardoz
-Torrelodones
 Trelew
-Trieste
-Tuxtla Gutiérrez
-Ushuaia
-Valencia
-Valenciennes
-Valladolid
-Valledupar
-Vallenar
-Valparaíso
-València
-Venezia
+Venice
 Verona
-Verónica
-Viena
-Vigo
-Villa Elisa - La Plata
-Vinaròs
-Viseu
-Vitoria- Gasteiz
-Viña del Mar
-Washington
-Xixón
+Warsaw
+Zagreb
 Zamora
-Zapopán
-Zaragoza
-Zurich - Remoto
+Accra
+Amman
+Arras
+Belém
+Bilbo
+Braga
+Cairo
+Cotia
+Cádiz
+Dakar
+Delhi
+Dhaka
+Hanoi
+Jerez
+Lagos
+Lille
+Palma
+Paris
+Perth
+Porto
+Quito
+Rabat
+Seoul
+Sofia
+Tokio
+Tunis
+Turin
+Viena
+Viseu
+Xixón
 Évora
+Baku
+Faro
+Gavà
+Graz
+Irún
+Jaén
+Kyiv
+Laon
+Lens
+Lima
+Lugo
+Lyon
+Oslo
+Pisa
+Reus
+Riga
+Roma
+Vigo
+Elx

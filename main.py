@@ -25,19 +25,19 @@ from src.collect.sources_loader import load_sources, should_include_social_seeds
 # =========================
 # Paths
 # =========================
-BASE_SOURCES_YML = "config/sources.yml"
+BASE_SOURCES_YML      = "config/sources.yml"
 GENERATED_SOURCES_YML = "config/sources.generated.yml"
-FEMINIST_SOURCES_YML = "config/sources.feminist.yml"
+FEMINIST_SOURCES_YML  = "config/sources.feminist.yml"
 
-KEYWORDS_YML = "config/keywords.yml"
-CITIES_TXT = "config/cities.txt"
+KEYWORDS_YML     = "config/keywords.yml"
+CITIES_TXT       = "config/cities.txt"
 DOMAIN_RULES_YML = "config/domain_rules.yml"
 
-EXPORT_MASTER = "data/exports/mapa_8m_global_master.csv"
-EXPORT_UMAP = "data/exports/mapa_8m_global_umap.csv"
+EXPORT_MASTER    = "data/exports/mapa_8m_global_master.csv"
+EXPORT_UMAP      = "data/exports/mapa_8m_global_umap.csv"
 EXPORT_SIN_COORD = "data/exports/mapa_8m_global_sin_coord.csv"
 
-IMAGES_DIR = "data/images"
+IMAGES_DIR         = "data/images"
 GEOCODE_CACHE_PATH = "data/processed/geocode_cache.json"
 
 
@@ -46,16 +46,16 @@ GEOCODE_CACHE_PATH = "data/processed/geocode_cache.json"
 # =========================
 FAST_MODE = os.environ.get("FAST_MODE", "true").lower() in ("1", "true", "yes", "y", "on")
 
-MAX_SEEDS = int(os.environ.get("MAX_SEEDS", "220"))
-MAX_PRIORITY = int(os.environ.get("MAX_PRIORITY", "750"))
+MAX_SEEDS            = int(os.environ.get("MAX_SEEDS",            "220"))
+MAX_PRIORITY         = int(os.environ.get("MAX_PRIORITY",         "750"))
 MAX_TOTAL_CANDIDATES = int(os.environ.get("MAX_TOTAL_CANDIDATES", "3000"))
 
-CRAWL_DEPTH = int(os.environ.get("CRAWL_DEPTH", "2"))
+CRAWL_DEPTH       = int(os.environ.get("CRAWL_DEPTH",       "2"))
 MAX_PAGES_PER_SEED = int(os.environ.get("MAX_PAGES_PER_SEED", "30" if FAST_MODE else "60"))
 
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "20"))
 
-THRESHOLD_EXTRACT = int(os.environ.get("THRESHOLD_EXTRACT", "6"))
+THRESHOLD_EXTRACT     = int(os.environ.get("THRESHOLD_EXTRACT",     "6"))
 THRESHOLD_EXPORT_UMAP = int(os.environ.get("THRESHOLD_EXPORT_UMAP", "10"))
 
 MIN_EVENT_DATE = date.fromisoformat(os.environ.get("MIN_EVENT_DATE", "2025-01-01"))
@@ -65,8 +65,8 @@ MIN_EVENT_DATE = date.fromisoformat(os.environ.get("MIN_EVENT_DATE", "2025-01-01
 # Utils
 # =========================
 def ensure_dirs():
-    os.makedirs("data/exports", exist_ok=True)
-    os.makedirs("data/images", exist_ok=True)
+    os.makedirs("data/exports",   exist_ok=True)
+    os.makedirs("data/images",    exist_ok=True)
     os.makedirs("data/processed", exist_ok=True)
 
 
@@ -76,7 +76,7 @@ def strip_fragment(u: str) -> str:
 
 def dedupe(items: list[str]) -> list[str]:
     seen = set()
-    out = []
+    out  = []
     for x in items:
         x = (x or "").strip()
         if x and x not in seen:
@@ -91,6 +91,38 @@ def normalize(s: str) -> str:
     s = str(s).replace("\u00a0", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+# =========================
+# Cities (para detect_city)
+# =========================
+def load_cities(path: str) -> list[str]:
+    if not os.path.exists(path):
+        return []
+    cities = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                cities.append(line)
+    # Ordenar por longitud descendente para evitar matches parciales
+    # (ej: "Buenos Aires" antes que "Aires")
+    return sorted(cities, key=lambda x: -len(x))
+
+
+def detect_city(text: str, cities: list[str]) -> str:
+    """
+    Busca la primera ciudad de la lista en el texto (case-insensitive).
+    Las ciudades están ordenadas por longitud descendente para que
+    "Buenos Aires" matchee antes que "Aires".
+    """
+    if not text or not cities:
+        return ""
+    t = text.lower()
+    for city in cities:
+        if city.lower() in t:
+            return city
+    return ""
 
 
 # =========================
@@ -110,76 +142,64 @@ def url_allowed_by_rules(rules: dict, url: str) -> bool:
 
     u = (url or "").lower()
 
-    # --- Reglas globales ---
+    # ── Reglas globales ──────────────────────────────────────────────────────
     global_rules = rules.get("global") or {}
     if isinstance(global_rules, dict):
-        for pat in global_rules.get("deny_url_contains") or []:
+        for pat in (global_rules.get("deny_url_contains") or []):
             if isinstance(pat, str) and pat.lower() in u:
                 return False
 
-    # --- Reglas por dominio ---
-    try:
-        domain = urlparse(url).netloc.lower().lstrip("www.")
-    except Exception:
-        domain = ""
+    # ── Reglas por dominio ───────────────────────────────────────────────────
+    parsed = urlparse(url)
+    host   = (parsed.netloc or "").lower().lstrip("www.")
 
-    if domain:
-        domain_cfg = (rules.get("domains") or {}).get(domain) or {}
-        if isinstance(domain_cfg, dict):
-            # hard_deny: bloquea el dominio completo (ej: wikipedia.org)
-            if domain_cfg.get("hard_deny"):
-                return False
-            # deny_url_contains específico del dominio
-            for pat in domain_cfg.get("deny_url_contains") or []:
-                if isinstance(pat, str) and pat.lower() in u:
-                    return False
-            # allow_url_contains: si está definido, solo pasan URLs que matcheen
-            allow = domain_cfg.get("allow_url_contains") or []
-            if allow:
-                for pat in allow:
-                    if isinstance(pat, str) and pat.lower() in u:
-                        return True
-                return False
+    domain_rules = (rules.get("domains") or {})
+    if not isinstance(domain_rules, dict):
+        return True
+
+    # Buscar el dominio más específico que matchee
+    matched = None
+    for d in domain_rules:
+        d_clean = d.lower().lstrip("www.")
+        if host == d_clean or host.endswith("." + d_clean):
+            if matched is None or len(d_clean) > len(matched):
+                matched = d_clean
+
+    if matched is None:
+        return True
+
+    drules = domain_rules.get(matched) or {}
+    if not isinstance(drules, dict):
+        return True
+
+    # hard_deny: bloquear el dominio completo
+    if drules.get("hard_deny"):
+        return False
+
+    # allow_url_contains: whitelist — si existe, solo pasan URLs que matcheen
+    allow = drules.get("allow_url_contains") or []
+    if allow:
+        for pat in allow:
+            if isinstance(pat, str) and pat.lower() in u:
+                return True
+        return False
+
+    # deny_url_contains: blacklist adicional por dominio
+    for pat in (drules.get("deny_url_contains") or []):
+        if isinstance(pat, str) and pat.lower() in u:
+            return False
 
     return True
-
-
-# =========================
-# City detection
-# =========================
-def load_cities(path: str) -> list[str]:
-    if not os.path.exists(path):
-        return []
-    cities = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            s = line.strip()
-            if s and not s.startswith("#"):
-                cities.append(s)
-    # más largas primero para evitar matches parciales ("Lima" antes que "Li")
-    cities.sort(key=lambda x: len(x), reverse=True)
-    return cities
-
-
-def detect_city(text: str, cities: list[str]) -> str:
-    if not text or not cities:
-        return ""
-    t = " " + normalize(text).lower() + " "
-    for city in cities:
-        c = city.lower()
-        if re.search(rf"(?<!\w){re.escape(c)}(?!\w)", t):
-            return city
-    return ""
 
 
 # =========================
 # Sources merge
 # =========================
 def read_sources_merged():
-    seeds_all = []
+    seeds_all    = []
     priority_all = []
     hashtags_all = []
-    seed_meta = {}
+    seed_meta    = {}
 
     paths = [BASE_SOURCES_YML, GENERATED_SOURCES_YML, FEMINIST_SOURCES_YML]
 
@@ -214,9 +234,9 @@ def read_sources_merged():
 # Crawl BFS
 # =========================
 def crawl_seed_bfs(session, seed, rules, depth, max_pages, global_seen, global_out, global_cap):
-    q = deque([(seed, depth)])
+    q          = deque([(seed, depth)])
     local_seen = set()
-    added = 0
+    added      = 0
     while q and added < max_pages and len(global_out) < global_cap:
         u, dleft = q.popleft()
         u = strip_fragment(u)
@@ -248,8 +268,8 @@ def crawl_seed_bfs(session, seed, rules, depth, max_pages, global_seen, global_o
 # =========================
 def build_umap_popup(ev: dict) -> str:
     titulo = normalize(ev.get("colectiva") or ev.get("convocatoria") or "")
-    fecha = normalize(ev.get("fecha") or "")
-    hora = normalize(ev.get("hora") or "")
+    fecha  = normalize(ev.get("fecha") or "")
+    hora   = normalize(ev.get("hora")  or "")
 
     when = ""
     if fecha and hora:
@@ -284,18 +304,18 @@ def build_umap_popup(ev: dict) -> str:
 def main():
     ensure_dirs()
     session = make_session(timeout=REQUEST_TIMEOUT)
-    rules = load_domain_rules()
-    cities = load_cities(CITIES_TXT)
+    rules   = load_domain_rules()
+    cities  = load_cities(CITIES_TXT)
 
     seeds, priority, hashtags, seed_meta = read_sources_merged()
 
     print(f"🌐 Seeds: {min(len(seeds), MAX_SEEDS)}")
     print(f"🎯 Priority URLs: {min(len(priority), MAX_PRIORITY)}")
     print(f"🧭 Crawl: depth={CRAWL_DEPTH} max_pages_per_seed={MAX_PAGES_PER_SEED}")
-    print(f"🏙️  Ciudades cargadas: {len(cities)}")
+    print(f"🏙️ Ciudades cargadas: {len(cities)}")
 
     candidates = []
-    seen = set()
+    seen       = set()
 
     for u in priority[:MAX_PRIORITY]:
         u = strip_fragment(u)
@@ -316,13 +336,13 @@ def main():
 
     print(f"🔎 Candidates total: {len(candidates)}")
 
-    records = []
+    records       = []
     geocode_cache = load_geocode_cache(GEOCODE_CACHE_PATH)
 
-    n_imgs = 0
-    n_geocoded = 0
+    n_imgs      = 0
+    n_geocoded  = 0
     n_low_score = 0
-    n_old_skip = 0
+    n_old_skip  = 0
 
     for url in candidates:
         html = fetch_url(session, url, use_cache=True)
@@ -330,7 +350,7 @@ def main():
             continue
 
         parsed = parse_page(url, html)
-        ev = extract_event_fields(parsed)
+        ev     = extract_event_fields(parsed)
         if not ev:
             continue
 
@@ -351,14 +371,15 @@ def main():
             except Exception:
                 pass
 
-        # ciudad fallback desde texto
+        # ciudad fallback — buscar SOLO en título + descripción corta (máx 300 chars)
+        # NO buscar en el texto completo: evita que nombres de personas
+        # (ej: "Verónica Sanz, moderadora") se conviertan en la ciudad del evento
         if not ev.get("ciudad"):
-            text_blob = normalize(
+            short_blob = normalize(
                 str(ev.get("convocatoria") or "") + " " +
-                str(ev.get("descripcion") or "") + " " +
-                str(parsed.get("text") or "")
+                str(ev.get("descripcion")  or "")[:300]
             )
-            found = detect_city(text_blob, cities)
+            found = detect_city(short_blob, cities)
             if found:
                 ev["ciudad"] = found
 
@@ -369,7 +390,7 @@ def main():
             ev["lon"] = geo["lon"]
             n_geocoded += 1
 
-        # imagen fallback desde og:image en HTML crudo
+        # imagen fallback desde og:image en el HTML crudo
         img_url = (ev.get("imagen") or "").strip()
         if not img_url:
             m = re.search(
@@ -401,10 +422,10 @@ def main():
     export_sin_coord_csv(EXPORT_SIN_COORD, records, min_score=THRESHOLD_EXPORT_UMAP)
 
     print("")
-    print(f"🧾 Eventos master: {len(records)}")
-    print(f"🧠 Skipped low score: {n_low_score}")
+    print(f"🧾 Eventos master:      {len(records)}")
+    print(f"🧠 Skipped low score:   {n_low_score}")
     print(f"🗑️  Filtrados por fecha: {n_old_skip}")
-    print(f"📍 Geocoded: {n_geocoded}")
+    print(f"📍 Geocoded:            {n_geocoded}")
     print(f"🖼️  Imágenes descargadas: {n_imgs}")
 
 
