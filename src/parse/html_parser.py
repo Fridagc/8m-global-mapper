@@ -1,176 +1,196 @@
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
-from urllib.parse import urljoin
-import json
+# src/parse/html_parser.py
+from __future__ import annotations
+
 import re
-import warnings
+from html.parser import HTMLParser
+from typing import Any
+from urllib.parse import urljoin
 
 
-def _get_meta(soup, key, attr="property"):
-    tag = soup.find("meta", attrs={attr: key})
-    if tag and tag.get("content"):
-        return tag["content"].strip()
-    return ""
+_SKIP_IMG_HINTS = (
+    "logo",
+    "icon",
+    "sprite",
+    "avatar",
+    "favicon",
+    "brand",
+    "badge",
+    "spinner",
+    "loading",
+)
 
 
-def _extract_jsonld_events(soup):
-    events = []
-    for script in soup.find_all("script", type="application/ld+json"):
-        try:
-            data = json.loads(script.string or "")
-        except Exception:
-            continue
-
-        candidates = data if isinstance(data, list) else [data]
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-
-            graph = item.get("@graph")
-            if isinstance(graph, list):
-                candidates.extend([x for x in graph if isinstance(x, dict)])
-
-            t = item.get("@type") or ""
-            if isinstance(t, list):
-                t = ",".join(t)
-
-            if "Event" in str(t):
-                events.append(
-                    {
-                        "startDate": item.get("startDate", "") or "",
-                        "endDate": item.get("endDate", "") or "",
-                        "name": item.get("name", "") or "",
-                        "image": item.get("image", "") or "",
-                    }
-                )
-    return events
+def _norm_space(s: str) -> str:
+    s = (s or "").replace("\u00a0", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def _looks_like_logo(url: str) -> bool:
-    u = (url or "").lower()
-    bad = [
-        "logo", "brand", "icon", "favicon", "sprite",
-        "footer", "header", "navbar", "nav", "menu",
-        "badge", "avatar", "profile", "placeholder",
-        "tracking", "pixel", "spacer",
-    ]
-    return any(b in u for b in bad)
+def _abs_url(base_url: str, maybe_url: str) -> str:
+    u = (maybe_url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("//"):
+        # protocol-relative
+        return "https:" + u
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    return urljoin(base_url, u)
 
 
-def _score_image(url: str) -> int:
-    """Score simple por heurística de URL (sin descargar)."""
-    u = (url or "").lower()
+def _looks_like_image_url(u: str) -> bool:
+    ul = (u or "").lower()
+    if not ul.startswith("http"):
+        return False
+    # acepta sin extensión también (muchos CMS sirven imágenes sin .jpg)
+    if any(ext in ul for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]):
+        return True
+    # algunos usan parámetros, ejemplo: .../image?format=jpg
+    if any(k in ul for k in ["format=jpg", "format=png", "format=webp", "image", "img", "media"]):
+        return True
+    return True
+
+
+def _score_img(u: str) -> int:
+    """
+    Heurística simple para escoger una imagen “buena”.
+    """
+    ul = (u or "").lower()
     score = 0
 
-    # Muy bueno: imágenes destacadas típicas
-    good = [
-        "og:image", "twitter", "featured", "feature", "hero", "banner",
-        "cover", "post", "article", "media", "uploads", "wp-content",
-        "flyer", "afiche", "cartel", "poster", "convoc", "8m", "marzo"
-    ]
-    if any(g in u for g in good):
-        score += 6
+    # penaliza cosas típicas de logos/icons
+    if any(h in ul for h in _SKIP_IMG_HINTS):
+        score -= 10
 
-    # Malo: logos/icons
-    if _looks_like_logo(u):
-        score -= 8
+    # bonifica cosas típicas de “hero”
+    if any(h in ul for h in ("hero", "header", "featured", "cover", "banner", "og", "social")):
+        score += 5
 
-    # Penalizar svgs (muchos logos)
-    if u.endswith(".svg"):
-        score -= 4
-
-    # Premiar jpg/png sobre webp/avif (uMap friendly)
-    if u.endswith(".jpg") or u.endswith(".jpeg") or u.endswith(".png"):
+    # bonifica extensiones “normales”
+    if any(ext in ul for ext in (".jpg", ".jpeg", ".png", ".webp")):
         score += 2
-    if u.endswith(".webp") or u.endswith(".avif"):
-        score -= 1
+
+    # bonifica si parece grande (muy común: 1200x630 etc.)
+    if re.search(r"(1200x630|1080|1920|1600|1280|1024|800)", ul):
+        score += 2
 
     return score
 
 
-def parse_page(url, html):
-    # Evitar warning cuando el HTML en realidad es RSS/XML
-    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+class _Parser(HTMLParser):
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
 
-    txt = (html or "").lstrip()
-    is_xml = txt.startswith("<?xml") or "<rss" in txt[:500].lower() or "<feed" in txt[:500].lower()
+        self.in_title = False
+        self.title_parts: list[str] = []
 
-    if is_xml:
-        soup = BeautifulSoup(html, "xml")
-    else:
-        soup = BeautifulSoup(html, "lxml")
+        self.text_parts: list[str] = []
+        self.meta: dict[str, str] = {}
 
-    title = ""
-    if soup.title and soup.title.string:
-        title = soup.title.string.strip()
+        self.images: list[str] = []
 
-    # Texto: paragraphs + headings (a veces el contenido está en h1/h2)
-    texts = []
-    for tag in soup.find_all(["h1", "h2", "h3", "p", "li"]):
-        t = tag.get_text(" ", strip=True)
-        if t and len(t) >= 20:
-            texts.append(t)
-    text = "\n".join(texts)
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        tag = (tag or "").lower()
+        a = {k.lower(): (v or "") for k, v in (attrs or [])}
 
-    meta = {
-        "og_title": _get_meta(soup, "og:title"),
-        "og_description": _get_meta(soup, "og:description"),
-        "og_image": _get_meta(soup, "og:image"),
-        "twitter_image": _get_meta(soup, "twitter:image", attr="name"),
-        "article_published_time": _get_meta(soup, "article:published_time"),
-        "article_modified_time": _get_meta(soup, "article:modified_time"),
-        "og_updated_time": _get_meta(soup, "og:updated_time"),
-        "twitter_title": _get_meta(soup, "twitter:title", attr="name"),
-        "twitter_description": _get_meta(soup, "twitter:description", attr="name"),
-    }
+        if tag == "title":
+            self.in_title = True
+            return
 
-    jsonld_events = _extract_jsonld_events(soup)
+        if tag == "meta":
+            # og:image / twitter:image / etc
+            prop = (a.get("property") or a.get("name") or "").strip().lower()
+            content = (a.get("content") or "").strip()
+            if prop and content:
+                self.meta[prop] = content
+            return
 
-    # 1) candidatos “destacados” primero (meta + JSON-LD image)
-    candidates = []
+        if tag == "img":
+            src = (a.get("src") or a.get("data-src") or a.get("data-lazy-src") or "").strip()
+            if src:
+                u = _abs_url(self.base_url, src)
+                if u and _looks_like_image_url(u):
+                    self.images.append(u)
+            return
 
-    for k in ["og_image", "twitter_image"]:
-        if meta.get(k):
-            candidates.append(urljoin(url, meta[k]))
+        # nada más: el texto lo capturamos en handle_data
 
-    for ev in jsonld_events:
-        img = ev.get("image")
-        if isinstance(img, str) and img.strip():
-            candidates.append(urljoin(url, img.strip()))
-        elif isinstance(img, list) and img:
-            candidates.append(urljoin(url, str(img[0]).strip()))
+    def handle_endtag(self, tag: str):
+        tag = (tag or "").lower()
+        if tag == "title":
+            self.in_title = False
 
-    # 2) luego imágenes en el body
-    for img in soup.find_all("img"):
-        src = img.get("src") or ""
-        if not src:
-            continue
-        if src.startswith("data:"):
-            continue
-        full = urljoin(url, src)
-        candidates.append(full)
+    def handle_data(self, data: str):
+        if not data:
+            return
+        if self.in_title:
+            self.title_parts.append(data)
+        else:
+            t = _norm_space(data)
+            # evita meter basura ultra corta
+            if len(t) >= 2:
+                self.text_parts.append(t)
 
-    # de-dupe manteniendo orden
+
+def parse_page(url: str, html: str) -> dict[str, Any]:
+    """
+    Parse HTML en un dict homogéneo para el extractor.
+    Incluye:
+      - title
+      - text (plano)
+      - meta (incluye og:image / twitter:image)
+      - og_image (string)
+      - images (lista)
+    """
+    url = (url or "").strip()
+    html = html or ""
+    if not url or not html:
+        return {}
+
+    p = _Parser(base_url=url)
+    try:
+        p.feed(html)
+    except Exception:
+        # HTML roto: igual devolvemos lo que tengamos
+        pass
+
+    title = _norm_space(" ".join(p.title_parts))
+    text = _norm_space(" ".join(p.text_parts))
+
+    # og:image / twitter:image como prioridad
+    og = (p.meta.get("og:image") or "").strip()
+    tw = (p.meta.get("twitter:image") or "").strip()
+    og_abs = _abs_url(url, og) if og else ""
+    tw_abs = _abs_url(url, tw) if tw else ""
+
+    # dedupe imágenes preservando orden
     seen = set()
-    uniq = []
-    for c in candidates:
-        if c and c not in seen:
-            seen.add(c)
-            uniq.append(c)
-
-    # 3) filtrar logos “obvios” y ordenar por score
-    filtered = []
-    for u in uniq:
-        if _looks_like_logo(u):
+    imgs: list[str] = []
+    for u in [og_abs, tw_abs] + (p.images or []):
+        u = (u or "").strip()
+        if not u:
             continue
-        filtered.append(u)
+        if u in seen:
+            continue
+        seen.add(u)
+        imgs.append(u)
 
-    filtered.sort(key=_score_image, reverse=True)
+    # escoge “mejor” imagen
+    best = ""
+    if og_abs:
+        best = og_abs
+    elif tw_abs:
+        best = tw_abs
+    elif imgs:
+        best = sorted(imgs, key=_score_img, reverse=True)[0]
 
     return {
         "url": url,
         "title": title,
         "text": text,
-        "images": filtered,  # ya ordenadas “mejor primero”
-        "meta": meta,
-        "jsonld_events": jsonld_events,
+        "meta": dict(p.meta),
+        "og_image": best,
+        "images": imgs,
+        "html": html,  # por si el extractor usa HTML
     }

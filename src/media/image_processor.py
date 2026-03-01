@@ -1,46 +1,43 @@
 # src/media/image_processor.py
-# Descarga y guarda imágenes localmente.
-# Wrapper compat: download_and_process_image(url, out_dir=...) -> {"public_url": "...", "local_path": "..."}
-#
-# Nota: en GitHub Pages, "public_url" idealmente debería mapear al path publicado.
-# Aquí dejamos "public_url" como ruta relativa estándar para que tu pipeline
-# la pueda reescribir si ya tienes esa lógica en Actions/Pages.
-
 from __future__ import annotations
 
-import os
-import re
 import hashlib
+import os
 from urllib.parse import urlparse
 
 import requests
 
 
-def _safe_filename_from_url(url: str) -> str:
-    u = (url or "").strip()
-    if not u:
-        return "image"
-
-    parsed = urlparse(u)
-    name = os.path.basename(parsed.path) or "image"
-
-    # limpia query strings “pegadas” (por si acaso)
-    name = name.split("?")[0].split("#")[0].strip() or "image"
-
-    # extensión
-    if not re.search(r"\.(jpg|jpeg|png|webp|gif)$", name, flags=re.IGNORECASE):
-        name += ".jpg"
-
-    # evita cosas raras
-    name = re.sub(r"[^a-zA-Z0-9._-]+", "_", name)
-    return name
+def _safe_join_url(*parts: str) -> str:
+    """
+    Join estilo URL, evitando '//' dobles.
+    """
+    cleaned = []
+    for p in parts:
+        p = (p or "").strip()
+        if not p:
+            continue
+        cleaned.append(p.strip("/"))
+    return "/".join(cleaned)
 
 
-def _hash(url: str) -> str:
-    return hashlib.sha1((url or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
+def _ext_from_url(url: str) -> str:
+    try:
+        path = urlparse(url).path or ""
+        _, ext = os.path.splitext(path)
+        ext = (ext or "").lower()
+        if ext in (".jpg", ".jpeg", ".png", ".webp"):
+            return ext
+    except Exception:
+        pass
+    return ".jpg"
 
 
-def _download_bytes(url: str, timeout: int = 25) -> bytes | None:
+def _download_bytes(url: str, timeout: int) -> bytes | None:
+    """
+    Descarga bytes de imagen con requests (sin depender de web_fetch.fetch_url),
+    para evitar incompatibilidades de firma.
+    """
     headers = {
         "User-Agent": os.environ.get(
             "USER_AGENT",
@@ -48,69 +45,47 @@ def _download_bytes(url: str, timeout: int = 25) -> bytes | None:
         )
     }
     try:
-        r = requests.get(url, headers=headers, timeout=timeout, stream=True)
+        r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
         return r.content
     except Exception:
         return None
 
 
-def download_and_process_image(url: str, out_dir: str = "data/images") -> dict | None:
+def download_and_process_image(source_url: str, out_dir: str = "data/images") -> dict:
     """
-    Compat con main.py.
-    - descarga
-    - guarda en out_dir
-    - retorna dict con public_url y local_path
+    Descarga imagen y devuelve:
+      - local_path: path local en repo
+      - public_url: path relativo para GitHub Pages, ej: 'images/xxx.jpg'
+      - source_url
 
-    No hace “procesado” pesado para no romper deps en Actions.
+    Nota:
+    - Aquí NO hacemos “procesamiento” pesado (resize/antologo). Es un downloader
+      robusto y compatible para Actions/local.
     """
-    url = (url or "").strip()
-    if not url.startswith("http"):
-        return None
+    source_url = (source_url or "").strip()
+    if not source_url.startswith("http"):
+        return {"public_url": "", "local_path": "", "source_url": source_url}
 
     os.makedirs(out_dir, exist_ok=True)
 
-    # nombre estable por hash para evitar duplicados
-    base_name = _safe_filename_from_url(url)
-    stem, ext = os.path.splitext(base_name)
-    fname = f"{stem}_{_hash(url)}{ext}"
+    ext = _ext_from_url(source_url)
+    h = hashlib.sha1(source_url.encode("utf-8")).hexdigest()
+    fname = f"{h}{ext}"
     local_path = os.path.join(out_dir, fname)
 
-    # si ya existe, devolvemos
-    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-        return {
-            "public_url": _public_url_for_local_path(local_path),
-            "local_path": local_path,
-            "source_url": url,
-        }
+    if not os.path.exists(local_path):
+        timeout = int(os.environ.get("REQUEST_TIMEOUT", "20"))
+        content = _download_bytes(source_url, timeout=timeout)
+        if content:
+            with open(local_path, "wb") as f:
+                f.write(content)
 
-    b = _download_bytes(url)
-    if not b:
-        return None
-
-    try:
-        with open(local_path, "wb") as f:
-            f.write(b)
-    except Exception:
-        return None
+    # public_url para Pages: site/images/... se publica como /images/...
+    public_url = _safe_join_url("images", fname)
 
     return {
-        "public_url": _public_url_for_local_path(local_path),
-        "local_path": local_path,
-        "source_url": url,
+        "public_url": public_url if os.path.exists(local_path) else "",
+        "local_path": local_path if os.path.exists(local_path) else "",
+        "source_url": source_url,
     }
-
-
-def _public_url_for_local_path(local_path: str) -> str:
-    """
-    Convierte data/images/xxx.jpg -> images/xxx.jpg
-    para que funcione en GitHub Pages.
-    """
-    lp = local_path.replace("\\", "/")
-
-    if "data/images/" in lp:
-        return lp.split("data/images/")[-1].join(["images/", ""])
-
-    # fallback seguro
-    filename = os.path.basename(lp)
-    return f"images/{filename}"

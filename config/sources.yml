@@ -1,230 +1,340 @@
 # config/sources.yml
 # Fuentes para 8m-global-mapper
-# - urls: scrapeables hoy (web)
-# - social: guardado para futuro (IG/X/FB bloquean sin APIs)
-# - hashtags: guardado para futuro (búsqueda social / manual)
+# Estructura:
+# seeds:
+#   <Region>:
+#     <Tema>:
+#       urls: [...]
+#       hashtags: [...]
+#       social: [...]   # opcional (NO se scrapea por defecto)
+#
+# Nota:
+# - "Sin tema detectado" NO lo pongas aquí como tema: es fallback automático cuando temas queda vacío.
+# - Usa los nombres EXACTOS de temas tal como tu dashboard los espera.
 
 seeds:
-  ESPANA_PORTUGAL:
-    general:
+  "Europa":
+    "Derechos digitales":
       urls:
-        - https://assemblea8m.cat
-        - https://vaga8mvalencia.org
-        - https://8marzoeuskadi.org
-      social:
-        - https://twitter.com/FeminismosMad
-        - https://instagram.com/comissio8m_bcn
-        - https://instagram.com/feminismos_galiza
-        - https://twitter.com/8m_lisboa
-        - https://facebook.com/8MSevilla
-        - https://instagram.com/feministas_aragon
+        - https://canodrom.barcelona/es
+      hashtags: []
+      social: []
 
-  AMERICA_LATINA:
-    general:
-      urls:
-        - https://www.niunamenos.org.ar
-        - https://8m.org.gt
-      social:
-        - https://instagram.com/coordinadorafem_cdmx
-        - https://twitter.com/8m_mexico
-        - https://instagram.com/niunamenos_ar
-        - https://facebook.com/asambleafeministabsas
-        - https://instagram.com/confluencia8m.uy
-        - https://twitter.com/VivasNosQueremos
-        - https://instagram.com/somosjuntas_peru
-        - https://facebook.com/MovimientoFeministaBogota
-        - https://twitter.com/feministas_ve
-        - https://instagram.com/8m_saopaulo
-        - https://facebook.com/MulheresRS
-
-    cuidados_y_trabajo:
-      urls:
-        - https://www.geledes.org.br/agenda
-      social:
-        - https://www.facebook.com/SindicatoAMMAR
-        - https://instagram.com/sindicatodome
-        - https://www.facebook.com/CACEHmx
-      hashtags:
-        - "#TrabajoDeCuidados"
-        - "#ValorenNuestrasVidas"
-        - "#HuelgaFeminista2026"
-        - "#PelaVidaDasMulheres"
-
-    violencias_y_feminicidios:
+    "Transfeminismos":
       urls: []
-      social:
-        - https://instagram.com/observatorio_feminicidio_mex
-        - https://facebook.com/JusticiaFeminicida
-      hashtags:
-        - "#NiUnaMenos"
-        - "#VivasNosQueremos"
-        - "#JusticiaFeminicida"
-        - "#8M2026"
+      hashtags: []
+      social: []
 
-    antirracismo:
-      urls:
-        - https://www.geledes.org.br
-      social:
-        - https://instagram.com/rederenafro
-        - https://instagram.com/afrofeminas
-      hashtags:
-        - "#FeminismoNegro"
-        - "#AntirracismoEsJusticia"
-        - "#MujeresNegrasLuchan"
-
-    lgbtiq:
+    "Cuidados y trabajo":
       urls: []
-      social:
-        - https://facebook.com/ColombiaDiversa
-        - https://instagram.com/otrxs_guatemala
-      hashtags:
-        - "#FeminismoTransinclusivo"
-        - "#ResistenciaTrans"
-        - "#LibresYDiversas"
+      hashtags: []
+      social: []
 
-    derechos_digitales:
-      urls:
-        - https://www.genderit.org/es
-      social:
-        - https://instagram.com/luchadoras.mx
-        - https://twitter.com/hiperderecho
-      hashtags:
-        - "#InternetFeminista"
-        - "#AutodefensaDigital"
-        - "#8MDigital"
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
 
-    transfeminismos:
-      urls:
-        - https://www.agenciapresentes.org
-        - https://www.atrans.cl
-      social:
-        - https://instagram.com/archivo_trans
-        - https://facebook.com/OTRAGuatemala
-        - https://instagram.com/casafreefem
-        - https://twitter.com/red_comunitaria
-        - https://instagram.com/casatrans_sp
-      hashtags:
-        - "#8MTransfeminista"
-        - "#NuestrasVidasImportan"
-        - "#LeyCupoTrans"
-        - "#ResistenciaTrans"
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
 
-  FRANCIA_ITALIA_ALEMANIA:
-    general:
-      urls:
-        - https://www.grevefeministe.fr
-        - https://8mitalia.wordpress.com
-        - https://frauenstreik.org
-        - https://www.nonunadimeno.it
-      social:
-        - https://instagram.com/greve_feministe
-        - https://twitter.com/OnArreteToutes
-        - https://instagram.com/nonunadimeno
-        - https://facebook.com/nonunadimeno.milano
-        - https://frauenstreikberlin.de
-        - https://instagram.com/feministischerstreik_bremen
-        - https://facebook.com/FrauenstreikHamburg
-
-    cuidados_y_trabajo:
-      urls:
-        - https://www.grevefeministe.fr/les-lieux
-      social:
-        - https://instagram.com/territoriomodomestico
-      hashtags:
-        - "#SeAcabó"
-        - "#HuelgaGeneralFeminista"
-        - "#GreveFeministe"
-        - "#8Mars"
-
-    violencias_y_feminicidios:
+    "Violencias":
       urls:
         - https://www.frauen-gegen-gewalt.de/de/aktuelles.html
-      social:
-        - https://instagram.com/direcontrolaviolenza
-        - https://instagram.com/nonunadimeno
-      hashtags:
-        - "#NonUnaDiMeno"
-        - "#GegenGewalt"
-        - "#StopFeminicide"
+      hashtags: []
+      social: []
 
-    derechos_digitales:
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "Africa":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Transfeminismos":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
+
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "America Norte":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Transfeminismos":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
+
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "America Centro":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Transfeminismos":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
+
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "America Sur":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+      "America Sur":
+    "Transfeminismos":
       urls:
-        - https://chayn.co/events
-        - https://www.genderit.org
-      hashtags:
-        - "#DigitalRightsAreHumanRights"
-        - "#CyberFeminisme"
-        - "#SafeOnline"
+        - https://www.agenciapresentes.org
+      hashtags: []
+      social: []
 
-    transfeminismos:
-      urls:
-        - https://www.gate.ngo
-      social:
-        - https://instagram.com/acceptess_t
-        - https://facebook.com/TransgenderEurope
-        - https://instagram.com/dgti_ev
-        - https://twitter.com/trans_it
-      hashtags:
-        - "#TransfeminismoEsFeminismo"
-        - "#SelfDetermination"
-        - "#8MarsTransfeministe"
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
 
-  AFRICA_ASIA_OCEANIA:
-    general:
-      urls:
-        - https://www.safecity.in
-        - https://www.nazra.org
-        - https://www.femnet.org
-      social:
-        - https://twitter.com/AkinaMama
-        - https://instagram.com/woar_gh
-        - https://facebook.com/GabielaWomen
-        - https://twitter.com/SayftyDotCom
-        - https://instagram.com/iwraw_ap
-        - https://twitter.com/Feminist_Oceania
-        - https://facebook.com/WomenActionNetwork
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
 
-    transfeminismos:
-      urls:
-        - https://iranti.org.za
-      social:
-        - https://facebook.com/BlueDiamondSociety
-      hashtags:
-        - "#TransRightsAreHumanRights"
-        - "#QueerLiberation"
-        - "#GlobalSouthTrans"
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
 
-# Fuentes "medios feministas" (web) — scrapeables hoy
-feminist_media:
-  - https://www.pikaramagazine.com/agenda
-  - https://www.latfem.org
-  - https://www.revistaazmina.com.br
-  - https://www.volcanicas.com
-  - https://www.vixensw.com
-  - https://www.causette.fr
-  - https://www.missy-magazin.de
-  - https://www.herizons.ca
-  - https://www.generonumero.com
-  - https://www.malvestida.com
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
 
-# Organizaciones (web) — scrapeables hoy
-orgs:
-  - https://www.calala.org
-  - https://www.fondoaccionurgente.org
-  - https://www.geledes.org.br
-  - https://www.planning-familial.org
-  - https://www.frauen-gegen-gewalt.de
-  - https://www.awid.org/es
-  - https://www.madre.org
-  - https://www.femnet.org
-  - https://www.semillas.org.mx
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
 
-# Redes (web) — scrapeables hoy
-networks:
-  - https://www.marchemondiale.org
-  - https://www.womenlobby.org
-  - https://www.gnwp.org
-  - https://www.ripess.org
-  - https://www.womennetserv.org
-  - https://www.wave-network.org
-  - https://www.netzkraft.net
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "Asia":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Transfeminismos":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
+
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []
+
+  "Oceania":
+    "Derechos digitales":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Transfeminismos":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Cuidados y trabajo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Antirracismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Feminicidios / femicidios":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Violencias":
+      urls: []
+      hashtags: []
+      social: []
+
+    "LGBTIQ+":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Indigenismo":
+      urls: []
+      hashtags: []
+      social: []
+
+    "Defensa territorial":
+      urls: []
+      hashtags: []
+      social: []

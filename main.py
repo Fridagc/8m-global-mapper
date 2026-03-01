@@ -1,21 +1,4 @@
 # main.py — 8m-global-mapper
-# Mantiene el pipeline existente:
-# - merge de sources (base/generated/feminist)
-# - priority URLs desde master CSV
-# - crawl por seeds (same-domain)
-# - parse + extract + score + reglas + fecha mínima
-# - geocode + cache
-# - descarga de imagen + filtro anti-logo/footer
-# - export master + umap + sin_coord
-# - archivos para GitHub Pages (Actions)
-#
-# Cambio clave aquí:
-# - sources.yml puede ser ANIDADO (región/tema/urls/social/hashtags)
-# - hashtags se incorporan como keywords extra (para scoring/matching)
-# - social no se scrapea por defecto (ENABLE_SOCIAL_SEEDS=false)
-#
-# Guardrail agregado (Paso 7):
-# - filtra falsos positivos obvios de "1 de mayo" cuando NO hay ancla 8M/IWD
 
 from __future__ import annotations
 
@@ -23,7 +6,9 @@ import csv
 import os
 import re
 import time
+from collections import deque
 from datetime import date
+from urllib.parse import urlparse, urljoin
 
 import yaml
 
@@ -35,12 +20,11 @@ from src.extract.extractor_ai import extract_event_fields
 from src.geocode.geocoder import geocode_event, load_geocode_cache, save_geocode_cache
 from src.media.image_processor import download_and_process_image
 from src.export.to_csv import export_master_csv, export_umap_csv, export_sin_coord_csv
-
 from src.collect.sources_loader import load_sources, should_include_social_seeds
 
 
 # =========================
-# Paths / Config
+# Paths
 # =========================
 BASE_SOURCES_YML = "config/sources.yml"
 GENERATED_SOURCES_YML = "config/sources.generated.yml"
@@ -59,19 +43,20 @@ EXPORT_SIN_COORD = "data/exports/mapa_8m_global_sin_coord.csv"
 IMAGES_DIR = "data/images"
 GEOCODE_CACHE_PATH = "data/processed/geocode_cache.json"
 
+
 # =========================
 # Tunables
 # =========================
-FAST_MODE = os.environ.get("FAST_MODE", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+FAST_MODE = os.environ.get("FAST_MODE", "true").lower() in ("1","true","yes","y","on")
 
-MAX_SEEDS = int(os.environ.get("MAX_SEEDS", "220"))            # cuántos seeds usar
-MAX_PRIORITY = int(os.environ.get("MAX_PRIORITY", "750"))      # cuántas priority urls
+MAX_SEEDS = int(os.environ.get("MAX_SEEDS", "220"))
+MAX_PRIORITY = int(os.environ.get("MAX_PRIORITY", "750"))
 MAX_TOTAL_CANDIDATES = int(os.environ.get("MAX_TOTAL_CANDIDATES", "3000"))
 
-MAX_PAGES_PER_SEED = int(os.environ.get("MAX_PAGES_PER_SEED", "60" if FAST_MODE else "120"))
+CRAWL_DEPTH = int(os.environ.get("CRAWL_DEPTH", "2"))
+MAX_PAGES_PER_SEED = int(os.environ.get("MAX_PAGES_PER_SEED", "30" if FAST_MODE else "60"))
 
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "20"))
-SLEEP_EVERY = int(os.environ.get("SLEEP_EVERY", "0"))  # 0 = no sleep
 
 THRESHOLD_EXTRACT = int(os.environ.get("THRESHOLD_EXTRACT", "6"))
 THRESHOLD_EXPORT_UMAP = int(os.environ.get("THRESHOLD_EXPORT_UMAP", "10"))
@@ -83,202 +68,148 @@ MIN_EVENT_DATE = date.fromisoformat(os.environ.get("MIN_EVENT_DATE", "2025-01-01
 # Utils
 # =========================
 def ensure_dirs():
-    os.makedirs("data/raw", exist_ok=True)
-    os.makedirs("data/processed", exist_ok=True)
     os.makedirs("data/exports", exist_ok=True)
-    os.makedirs(IMAGES_DIR, exist_ok=True)
-    os.makedirs("config", exist_ok=True)
+    os.makedirs("data/images", exist_ok=True)
+    os.makedirs("data/processed", exist_ok=True)
 
 
-def file_exists(p: str) -> bool:
-    return os.path.exists(p) and os.path.getsize(p) > 0
+def strip_fragment(u: str) -> str:
+    return (u or "").split("#")[0].strip()
 
 
-def load_yaml(path: str):
-    if not os.path.exists(path):
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def dedupe_urls(urls: list[str]) -> list[str]:
-    seen = set()
-    out = []
-    for u in urls:
-        u = (u or "").strip()
-        if not u:
-            continue
-        if u in seen:
-            continue
-        seen.add(u)
-        out.append(u)
+def dedupe(items: list[str]) -> list[str]:
+    seen=set()
+    out=[]
+    for x in items:
+        x=(x or "").strip()
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
     return out
 
 
-def normalize(s: str) -> str:
-    if not s:
+def _canon_seed_prefix(u: str) -> str:
+    u=strip_fragment(u)
+    try:
+        p=urlparse(u)
+        host=(p.netloc or "").lower()
+        if host.startswith("www."):
+            host=host[4:]
+        path=(p.path or "/")
+        if not path.startswith("/"):
+            path="/"+path
+        return host+path
+    except:
         return ""
-    s = s.replace("\u00a0", " ")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
 
 
-def read_csv_urls(path: str) -> list[str]:
-    if not os.path.exists(path):
-        return []
-    urls = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            u = (row.get("fuente_url") or row.get("cta_url") or row.get("convocatoria") or "").strip()
-            if u.startswith("http"):
-                urls.append(u)
-    return dedupe_urls(urls)
+def _canon_url(u:str)->str:
+    return _canon_seed_prefix(u)
 
 
-# =========================
-# Domain rules (allow/deny)
-# =========================
-def load_domain_rules() -> dict:
-    y = load_yaml(DOMAIN_RULES_YML)
-    return y if isinstance(y, dict) else {}
+def _assign_meta_by_seed_prefix(url:str, seed_meta:dict[str,dict])->tuple[str,list[str]]:
+    ukey=_canon_url(url)
+    matches=[]
+    for s,meta in (seed_meta or {}).items():
+        skey=_canon_seed_prefix(s)
+        if ukey.startswith(skey):
+            matches.append((len(skey),meta or {}))
+    if not matches:
+        return ("",[])
+    matches.sort(key=lambda x:x[0], reverse=True)
+    region=""
+    temas=[]
+    seen=set()
+    for _,meta in matches:
+        r=meta.get("region","")
+        if r and not region:
+            region=r
+        for t in meta.get("temas",[]):
+            if t and t not in seen:
+                seen.add(t)
+                temas.append(t)
+    return (region,temas)
 
 
-def url_allowed_by_rules(rules: dict, url: str, seed: str) -> bool:
-    if not rules:
-        return True
-    u = url.lower()
-
-    deny = rules.get("deny_contains", []) if isinstance(rules.get("deny_contains"), list) else []
-    for pat in deny:
-        if isinstance(pat, str) and pat.lower() in u:
-            return False
-
-    allow = rules.get("allow_contains", []) if isinstance(rules.get("allow_contains"), list) else []
-    if allow:
-        for pat in allow:
-            if isinstance(pat, str) and pat.lower() in u:
-                return True
-        # si hay allow list y no matchea nada, bloquea
-        return False
-
-    return True
-
-
-# =========================
-# Keywords (base + hashtags)
-# =========================
-def read_keywords() -> list[str]:
-    y = load_yaml(KEYWORDS_YML)
-    out = []
-    if isinstance(y, list):
-        out.extend([str(x).strip() for x in y if str(x).strip()])
-    elif isinstance(y, dict):
-        for v in y.values():
-            if isinstance(v, list):
-                out.extend([str(x).strip() for x in v if str(x).strip()])
-    return [k for k in out if k]
-
-
-def merge_keywords_with_hashtags(keywords: list[str], hashtags: list[str]) -> list[str]:
-    # hashtags como tokens “buscables”; también agrega versiones sin '#'
-    extra = []
-    for h in hashtags or []:
-        h = (h or "").strip()
-        if not h:
+def _extract_image_from_html(html:str)->str:
+    if not html:
+        return ""
+    m=re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',html,re.I)
+    if m:
+        return m.group(1).strip()
+    m=re.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',html,re.I)
+    if m:
+        return m.group(1).strip()
+    for m in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']',html,re.I):
+        src=m.group(1).strip()
+        if any(x in src.lower() for x in ["favicon","logo","icon","sprite","data:image"]):
             continue
-        extra.append(h)
-        if h.startswith("#") and len(h) > 1:
-            extra.append(h[1:])
-    return dedupe_urls([k for k in (keywords + extra) if k and k.strip()])
+        return src
+    return ""
 
 
 # =========================
-# City list
+# Sources merge
 # =========================
-def load_cities(path: str) -> list[str]:
-    if not os.path.exists(path):
-        return []
-    cities = []
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            cities.append(s)
-    cities.sort(key=lambda x: len(x), reverse=True)
-    return cities
+def read_sources_merged():
+    seeds_all=[]
+    priority_all=[]
+    hashtags_all=[]
+    seed_meta={}
 
+    paths=[BASE_SOURCES_YML, GENERATED_SOURCES_YML, FEMINIST_SOURCES_YML]
 
-def detect_city(text: str, cities: list[str]) -> str | None:
-    if not text or not cities:
-        return None
-    t = " " + normalize(text).lower() + " "
-    for city in cities:
-        c = city.lower()
-        if re.search(rf"(?<!\w){re.escape(c)}(?!\w)", t):
-            return city
-    return None
-
-
-# =========================
-# Sources: merge base/generated/feminist + nested YAML support
-# =========================
-def generate_sources_from_base_and_master_csv(
-    base_sources_yml: str,
-    master_csv_path: str,
-    out_generated_yml: str,
-    max_priority: int = 2200,
-):
-    base_bundle = load_sources(base_sources_yml)
-    seeds = base_bundle.seeds_urls[:MAX_SEEDS]
-
-    priority_urls = read_csv_urls(master_csv_path)[:max_priority]
-    payload = {"seeds": seeds, "priority_urls": priority_urls}
-
-    os.makedirs(os.path.dirname(out_generated_yml), exist_ok=True)
-    with open(out_generated_yml, "w", encoding="utf-8") as f:
-        yaml.safe_dump(payload, f, sort_keys=False, allow_unicode=True)
-
-
-def select_sources_file() -> str:
-    if (not file_exists(GENERATED_SOURCES_YML)) and os.path.exists(MASTER_CSV_PATH):
-        print(f"🧩 Generando {GENERATED_SOURCES_YML} desde {MASTER_CSV_PATH} + {BASE_SOURCES_YML}")
-        generate_sources_from_base_and_master_csv(
-            base_sources_yml=BASE_SOURCES_YML,
-            master_csv_path=MASTER_CSV_PATH,
-            out_generated_yml=GENERATED_SOURCES_YML,
-            max_priority=2200,
-        )
-    return GENERATED_SOURCES_YML if file_exists(GENERATED_SOURCES_YML) else BASE_SOURCES_YML
-
-
-def read_sources_merged() -> tuple[list[str], list[str], list[str]]:
-    """
-    Merge de:
-      - sources.yml (anidado OK)
-      - sources.generated.yml (si existe)
-      - sources.feminist.yml (si existe)
-    Devuelve: (seeds, priority_urls, hashtags)
-    """
-    seeds_all: list[str] = []
-    priority_all: list[str] = []
-    hashtags_all: list[str] = []
-
-    paths = [BASE_SOURCES_YML, select_sources_file(), FEMINIST_SOURCES_YML]
     for p in paths:
-        if not file_exists(p):
+        if not os.path.exists(p):
             continue
-        b = load_sources(p)
-        seeds_all.extend(b.seeds_urls)
-        priority_all.extend(b.priority_urls)
-        hashtags_all.extend(b.hashtags)
 
-        # opcional: si habilitan social seeds explícitamente
+        bundle=load_sources(p)
+        seeds_all.extend(bundle.seeds_urls)
+        priority_all.extend(bundle.priority_urls)
+        hashtags_all.extend(bundle.hashtags)
+
         if should_include_social_seeds():
-            seeds_all.extend(b.social_urls)
+            seeds_all.extend(bundle.social_urls)
 
-    return dedupe_urls(seeds_all), dedupe_urls(priority_all), dedupe_urls(hashtags_all)
+        y=yaml.safe_load(open(p,"r",encoding="utf-8"))
+        if isinstance(y,dict) and isinstance(y.get("seeds"),dict):
+            for region,topics in y["seeds"].items():
+                for tema,node in topics.items():
+                    for u in node.get("urls",[]):
+                        seed_meta[u]={"region":region,"temas":[tema]}
+
+    return dedupe(seeds_all), dedupe(priority_all), dedupe(hashtags_all), seed_meta
+
+
+# =========================
+# Crawl BFS
+# =========================
+def crawl_seed_bfs(session, seed, rules, depth, max_pages, global_seen, global_out, global_cap):
+    q=deque([(seed,depth)])
+    local_seen=set()
+    added=0
+    while q and added<max_pages and len(global_out)<global_cap:
+        u,dleft=q.popleft()
+        u=strip_fragment(u)
+        if not u or u in local_seen:
+            continue
+        local_seen.add(u)
+        if not same_domain(seed,u):
+            continue
+        if u not in global_seen:
+            global_seen.add(u)
+            global_out.append(u)
+            added+=1
+        if dleft<=1:
+            continue
+        html=fetch_url(session,u,use_cache=True)
+        if not html:
+            continue
+        for link in extract_links(u,html):
+            link=strip_fragment(link)
+            if link and same_domain(seed,link):
+                q.append((link,dleft-1))
+    return added
 
 
 # =========================
@@ -286,217 +217,100 @@ def read_sources_merged() -> tuple[list[str], list[str], list[str]]:
 # =========================
 def main():
     ensure_dirs()
-    session = make_session(timeout=REQUEST_TIMEOUT)
-    cities = load_cities(CITIES_TXT)
-    rules = load_domain_rules()
+    session=make_session(timeout=REQUEST_TIMEOUT)
 
-    seeds, priority, hashtags = read_sources_merged()
-    base_keywords = read_keywords()
-    keywords = merge_keywords_with_hashtags(base_keywords, hashtags)
+    seeds,priority,hashtags,seed_meta=read_sources_merged()
 
-    print(f"🌐 Seeds: {min(len(seeds), MAX_SEEDS)}")
-    print(f"🎯 Priority URLs: {min(len(priority), MAX_PRIORITY)}")
-    print(f"🔎 Keywords: {len(keywords)} (base={len(base_keywords)} + hashtags={len(hashtags)})")
-    print(f"⚡ FAST_MODE: {FAST_MODE}")
-    print(f"🧠 Score thresholds: extract>={THRESHOLD_EXTRACT} | umap>={THRESHOLD_EXPORT_UMAP}")
-    print(f"🗓️  MIN_EVENT_DATE: {MIN_EVENT_DATE.isoformat()}")
-    if not should_include_social_seeds():
-        print("🧷 Social seeds: OFF (ENABLE_SOCIAL_SEEDS=false)")
+    print(f"🌐 Seeds: {min(len(seeds),MAX_SEEDS)}")
+    print(f"🎯 Priority URLs: {min(len(priority),MAX_PRIORITY)}")
+    print(f"🧭 Crawl: depth={CRAWL_DEPTH} max_pages_per_seed={MAX_PAGES_PER_SEED}")
 
-    candidates: list[str] = []
-    seen = set()
+    candidates=[]
+    seen=set()
 
-    # priority primero
     for u in priority[:MAX_PRIORITY]:
-        if u not in seen and url_allowed_by_rules(rules, u, ""):
+        u=strip_fragment(u)
+        if u and u not in seen:
             seen.add(u)
             candidates.append(u)
-        if len(candidates) >= MAX_TOTAL_CANDIDATES:
-            break
 
-    # crawl por seeds (misma domain)
     for seed in seeds[:MAX_SEEDS]:
-        if len(candidates) >= MAX_TOTAL_CANDIDATES:
+        if len(candidates)>=MAX_TOTAL_CANDIDATES:
             break
-
-        if not url_allowed_by_rules(rules, seed, ""):
-            continue
-
-        html = fetch_url(session, seed, use_cache=True)
-        if not html:
-            print(f"[WARN] Seed sin respuesta: {seed}")
-            continue
-
-        links = extract_links(seed, html)
-        picked = 0
-
-        for link in links:
-            if len(candidates) >= MAX_TOTAL_CANDIDATES:
-                break
-            if link in seen:
-                continue
-            if not same_domain(seed, link):
-                continue
-            if not url_allowed_by_rules(rules, link, ""):
-                continue
-            seen.add(link)
-            candidates.append(link)
-            picked += 1
-            if picked >= MAX_PAGES_PER_SEED:
-                break
-
+        picked=crawl_seed_bfs(
+            session,seed,{},CRAWL_DEPTH,
+            MAX_PAGES_PER_SEED,
+            seen,candidates,MAX_TOTAL_CANDIDATES
+        )
         if picked:
             print(f"🔗 {seed} -> candidatos: {picked}")
 
     print(f"🔎 Candidates total: {len(candidates)}")
 
-    records: list[dict] = []
-    started = time.time()
+    records=[]
+    geocode_cache=load_geocode_cache(GEOCODE_CACHE_PATH)
 
-    geocode_cache = load_geocode_cache(GEOCODE_CACHE_PATH)
+    n_imgs=0
+    n_old_skip=0
+    n_low_score=0
 
-    # contadores
-    n_events = 0
-    n_geocoded = 0
-    n_imgs = 0
-    n_old_skip = 0
-    n_low_score = 0
-    n_rules_skip = 0
-
-    # procesar
-    for i, url in enumerate(candidates, start=1):
-        if SLEEP_EVERY and (i % SLEEP_EVERY == 0):
-            time.sleep(1)
-
-        html = fetch_url(session, url, use_cache=True)
+    for url in candidates:
+        html=fetch_url(session,url,use_cache=True)
         if not html:
             continue
 
-        parsed = parse_page(url, html)
-        if not parsed:
-            continue
-
-        # extracción
-        ev = extract_event_fields(parsed)
+        parsed=parse_page(url,html)
+        ev=extract_event_fields(parsed)
         if not ev:
             continue
 
-        # scoring básico: usamos el score que ya produce extractor_ai (si existe),
-        # y además reforzamos con keywords/hashtags.
-        score = int(ev.get("score_relevancia") or 0)
+        score=int(ev.get("score_relevancia") or 0)
 
-        text_blob = " ".join([
-            str(ev.get("colectiva") or ""),
-            str(ev.get("convocatoria") or ""),
-            str(ev.get("descripcion") or ""),
-            str(ev.get("direccion") or ""),
-            str(parsed.get("title") or ""),
-            str(parsed.get("text") or ""),
-        ]).lower()
-
-        # --- Guardrail Paso 7: anti "1 de mayo" cuando no hay ancla 8M/IWD ---
-        is_may_day = any(x in text_blob for x in ["1 de mayo", "1 mayo", "may day", "first of may"])
-        has_8m = any(
-            x in text_blob
-            for x in [
-                "8m",
-                "8 de marzo",
-                "8 marzo",
-                "8 mars",
-                "8 march",
-                "iwd",
-                "international women's day",
-                "international womens day",
-                "día internacional de la mujer",
-                "dia internacional de la mujer",
-                "dia internacional da mulher",
-            ]
-        )
-        if is_may_day and not has_8m:
-            n_low_score += 1
-            continue
-
-        # bonus por keywords (incluye hashtags)
-        bonus = 0
-        for k in keywords:
-            kk = (k or "").lower()
-            if kk and kk in text_blob:
-                bonus += 1
-        score += min(8, bonus)  # cap
-
-        ev["score_relevancia"] = score
-        ev["fuente_url"] = ev.get("fuente_url") or url
-        ev["cta_url"] = (ev.get("cta_url") or ev.get("convocatoria") or url).split("#")[0]  # evita links vacíos por fragments
-
-        # fecha mínima
-        f = ev.get("fecha") or ""
-        try:
-            if f:
-                d = date.fromisoformat(f)
-                if d < MIN_EVENT_DATE:
-                    n_old_skip += 1
+        f=(ev.get("fecha") or "").strip()
+        if f:
+            try:
+                dd=date.fromisoformat(f)
+                ev["anio"]=str(dd.year)
+                if dd<MIN_EVENT_DATE:
+                    n_old_skip+=1
                     continue
-        except Exception:
-            pass
+            except:
+                ev["anio"]=""
 
-        # reglas / thresholds
-        if score < THRESHOLD_EXTRACT:
-            n_low_score += 1
-            continue
-        if not url_allowed_by_rules(rules, url, ""):
-            n_rules_skip += 1
+        if score<THRESHOLD_EXTRACT:
+            n_low_score+=1
             continue
 
-        # ciudad
-        if not ev.get("ciudad"):
-            c = detect_city(text_blob, cities)
-            if c:
-                ev["ciudad"] = c
+        region,temas=_assign_meta_by_seed_prefix(url,seed_meta)
+        ev["region"]=region
+        ev["temas"]="; ".join(temas) if temas else "Sin tema detectado"
 
-        # geocode
-        geo = geocode_event(ev, geocode_cache=geocode_cache)
-        if geo and geo.get("lat") and geo.get("lon"):
-            ev["lat"] = geo["lat"]
-            ev["lon"] = geo["lon"]
-            n_geocoded += 1
+        img_url=ev.get("imagen") or ""
+        if not img_url:
+            img_url=_extract_image_from_html(html)
 
-        # imagen (solo si hay url candidata)
-        img_url = ev.get("imagen") or ev.get("actividad_url_imagen") or ""
-        if img_url and isinstance(img_url, str) and img_url.startswith("http"):
-            out = download_and_process_image(img_url, out_dir=IMAGES_DIR)
-            if out and out.get("public_url"):
-                ev["imagen"] = out["public_url"]  # debe ser URL publicada en Pages
-                n_imgs += 1
+        if img_url:
+            img_abs=urljoin(url,img_url)
+            if img_abs.startswith("http"):
+                out=download_and_process_image(img_abs,out_dir=IMAGES_DIR)
+                if out and out.get("public_url"):
+                    ev["imagen"]=out["public_url"]
+                    n_imgs+=1
 
         records.append(ev)
-        n_events += 1
 
-        if i % 100 == 0 or i == len(candidates):
-            elapsed = time.time() - started
-            print(
-                f"⏳ {i}/{len(candidates)} | eventos:{n_events} | geocoded:{n_geocoded} | "
-                f"imgs:{n_imgs} | old_skip:{n_old_skip} | low_score:{n_low_score} | {elapsed:.1f}s"
-            )
+    save_geocode_cache(GEOCODE_CACHE_PATH,geocode_cache)
 
-    save_geocode_cache(GEOCODE_CACHE_PATH, geocode_cache)
+    export_master_csv(EXPORT_MASTER,records)
+    export_umap_csv(EXPORT_UMAP,records,min_score=THRESHOLD_EXPORT_UMAP)
+    export_sin_coord_csv(EXPORT_SIN_COORD,records,min_score=THRESHOLD_EXPORT_UMAP)
 
-    # export
-    export_master_csv(EXPORT_MASTER, records)
-    export_umap_csv(EXPORT_UMAP, records, min_score=THRESHOLD_EXPORT_UMAP)
-    export_sin_coord_csv(EXPORT_SIN_COORD, records, min_score=THRESHOLD_EXPORT_UMAP)
-
-    total_time = time.time() - started
     print("")
-    print(f"📄 CSV master:    {EXPORT_MASTER}")
-    print(f"📄 CSV uMap:      {EXPORT_UMAP}")
-    print(f"📄 CSV sin coord: {EXPORT_SIN_COORD}")
-    print(f"🧾 Eventos master:        {len(records)}")
-    print(f"🗑️  Filtrados por fecha:  {n_old_skip}")
-    print(f"🧠 Skipped low score:     {n_low_score}")
-    print(f"🧱 Skipped by rules:      {n_rules_skip}")
-    print(f"🖼️ imágenes descargadas:  {n_imgs}")
-    print(f"⏱️  Tiempo total: {total_time:.1f}s")
+    print(f"🧾 Eventos master: {len(records)}")
+    print(f"🗑️  Filtrados por fecha: {n_old_skip}")
+    print(f"🧠 Skipped low score: {n_low_score}")
+    print(f"🖼️ imágenes descargadas: {n_imgs}")
 
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
