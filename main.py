@@ -236,6 +236,9 @@ def build_umap_popup(ev: dict) -> str:
 
 
 # =========================
+# MAIN
+# =========================
+# =========================
 # Helpers: seed meta + país desde TLD
 # =========================
 
@@ -262,7 +265,7 @@ _TLD_TO_COUNTRY = {
     "gt": "Guatemala", "hn": "Honduras", "sv": "El Salvador",
     "ni": "Nicaragua", "pa": "Panamá", "do": "República Dominicana",
     "cu": "Cuba", "ht": "Haití", "jm": "Jamaica",
-    "cat": "España",  # Cataluña
+    "cat": "España",
 }
 
 def _infer_country_from_url(url: str) -> str:
@@ -270,7 +273,6 @@ def _infer_country_from_url(url: str) -> str:
     try:
         from urllib.parse import urlparse
         host = urlparse(url).netloc.lower().split(":")[0]
-        # Eliminar www.
         if host.startswith("www."):
             host = host[4:]
         parts = host.rsplit(".", 1)
@@ -283,8 +285,7 @@ def _infer_country_from_url(url: str) -> str:
 
 
 def _find_seed_meta_for_url(url: str, seed_meta: dict) -> dict:
-    """Encuentra el seed_meta que corresponde a una URL de candidato.
-    Busca por prefijo de dominio exacto."""
+    """Encuentra el seed_meta que corresponde a una URL de candidato."""
     try:
         from urllib.parse import urlparse
         host = urlparse(url).netloc.lower()
@@ -301,9 +302,6 @@ def _find_seed_meta_for_url(url: str, seed_meta: dict) -> dict:
     return {}
 
 
-# =========================
-# MAIN
-# =========================
 def main():
     ensure_dirs()
     session=make_session(timeout=REQUEST_TIMEOUT)
@@ -372,11 +370,14 @@ def main():
             except:
                 pass
 
-        # Aplicar ciudad_default y pais_default desde seed_meta si el evento no tiene ciudad/pais
+        # Aplicar ciudad_default y pais_default desde seed_meta
         seed_info = _find_seed_meta_for_url(url, seed_meta)
         if seed_info:
             if not (ev.get("ciudad") or "").strip() and seed_info.get("ciudad_default"):
                 ev["ciudad"] = seed_info["ciudad_default"]
+                # Limpiar coordenadas viejas para forzar re-geocodificación con ciudad correcta
+                ev.pop("lat", None)
+                ev.pop("lon", None)
             if not (ev.get("pais") or "").strip() and seed_info.get("pais_default"):
                 ev["pais"] = seed_info["pais_default"]
 
